@@ -26,6 +26,7 @@ requires = [
     "anndata",
     "scanpy",
     "scikit-learn",
+    "scikit-learn-extra",
     "umap-learn",
     "numba",
     "protobuf",
