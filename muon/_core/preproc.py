@@ -16,6 +16,8 @@ from scipy.sparse import (
 from scipy.spatial.distance import cdist
 from scipy.special import softmax
 from sklearn.utils import check_random_state
+from sklearn.cluster import KMeans
+from sklearn_extra.cluster import CLARA
 
 from anndata import AnnData
 import scanpy
@@ -923,3 +925,83 @@ def sample_obs(
             obs_names.append(np.random.choice(view.obs_names.values, size=new_n, replace=False))
         obs_names = np.concatenate(obs_names)
         return data[obs_names]
+
+
+# Demultiplexing samples from hashtags
+
+
+def hashtag_demultiplex(
+    mdata: MuData,
+    hashtags: Union[str, Sequence[str]],
+    modality: str = "prot",
+    positive_quantile: float = 0.99,
+    k_func: Literal["kmeans", "clara"] = "clara",
+    n_clusters: Optional[int] = None,
+    n_init: Optional[int] = 100,
+    n_sampling: Optional[int] = 100,
+    seed: Optional[int] = 42,
+) -> None:
+    """
+    Annotate data with samples based on hashtags.
+
+    [Description of algorithm and explanation of its source (Seurat)] # TODO
+
+    Parameters
+    ----------
+    mdata: MuData
+        MuData object.
+    hashtags: str or Sequence[str]
+        Column names in .var or .X that correspond to the hashtags.
+    modality: str ('prot' by default)
+        The modality the hashtags are in.
+    positive_quantile: float (0.99 by default)
+        Quantile of inferred distribution that gives the threshold
+        for a cell to be considered positive for a hashtag.
+    k_func: Literal ('kmeans' or 'clara')
+        The function to use for clustering.
+    n_clusters: int
+        Amount of clusters to find. If None, becomes the length of
+        ``hashtags`` plus one.
+    n_init: int (100 by default)
+        How many different centroid seeds to run with. Used by
+        ``k_func`` 'kmeans'.
+    n_sampling: int (100 by default)
+        Sample size for each iteration. Used by ``k_func`` 'clara'.
+    seed: int (42 by default)
+        Seed for clustering random states.
+    """
+    if not isinstance(mdata, MuData):
+        raise TypeError("mdata must be a MuData object")
+
+    if n_clusters == None:
+        if isinstance(hashtags, list):
+            n_clusters = len(hashtags) + 1
+        elif isinstance(hashtags, str):
+            n_clusters = 2
+        else:
+            raise TypeError("hashtags must be either a string or a list of strings")
+
+    try:
+        adata = mdata.mod[modality].copy()
+    except KeyError:
+        raise KeyError(f"the modality '{modality}' does not exist on the given MuData object")
+
+    filter_var(adata, hashtags)
+
+    if k_func == "kmeans":
+        kmeans = KMeans(n_clusters=n_clusters, n_init=n_init, random_state=seed).fit(adata.X)
+        adata.obs["demultiplex_cluster"] = kmeans.predict(adata.X)
+    elif k_func == "clara":
+        clara = CLARA(n_clusters=n_clusters, n_sampling=n_sampling, random_state=seed).fit(adata.X)
+        adata.obs["demultiplex_cluster"] = clara.predict(adata.X)
+    else:
+        raise ValueError("k_func must either be 'kmeans' or 'clara'")
+
+    clusters = list(set(adata.obs["demultiplex_cluster"]))
+    averages = pd.DataFrame(index=clusters, columns=hashtags)
+
+    for cluster in clusters:
+        for hashtag in hashtags:
+            averages.loc[cluster, hashtag] = np.mean(
+                adata[adata.obs["demultiplex_cluster"] == cluster, hashtag].X
+            )
