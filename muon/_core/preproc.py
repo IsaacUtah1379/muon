@@ -16,6 +16,7 @@ from scipy.sparse import (
 )
 from scipy.spatial.distance import cdist
 from scipy.special import softmax
+from scipy.stats import nbinom
 from sklearn.utils import check_random_state
 from sklearn.cluster import KMeans
 from sklearn_extra.cluster import CLARA
@@ -999,3 +1000,9 @@ def hashtag_demultiplex(
             averages.loc[cluster, hashtag] = np.mean(
                 adata[adata.obs["demultiplex_cluster"] == cluster, hashtag].X
             )
+
+    for cluster in clusters:
+        if (np.sum(averages.loc[cluster]) == 0):
+            raise ValueError("cells with zero counts exist as a cluster")
+
+    # When fitting nbinom, p = mean/variance, n = mean^2/(variance - mean)
