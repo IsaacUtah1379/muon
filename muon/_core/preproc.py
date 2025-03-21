@@ -929,6 +929,8 @@ def hashtag_demultiplex(
     mdata: MuData,
     hashtags: Union[str, Sequence[str]],
     modality: str = "prot",
+    layer: Optional[str] = None,
+    log1p: bool = True,
     positive_quantile: float = 0.99,
     k_func: Literal["kmeans", "clara"] = "clara",
     n_clusters: Optional[int] = None,
@@ -949,6 +951,11 @@ def hashtag_demultiplex(
         Column names in .var or .X that correspond to the hashtags.
     modality: str ('prot' by default)
         The modality the hashtags are in.
+    layer: str (None by default)
+        The layer of the modality to look at.
+    log1p: bool (True by default)
+        Whether or not to normalize the data by log1p. If true,
+        writes the normalized data to the layer 'log1p'.
     positive_quantile: float (0.99 by default)
         Quantile of inferred distribution that gives the threshold
         for a cell to be considered positive for a hashtag.
@@ -981,6 +988,9 @@ def hashtag_demultiplex(
     except KeyError:
         raise KeyError(f"the modality '{modality}' does not exist on the given MuData object")
 
+    if layer is not None:
+        adata = adata.layers[layer]
+
     filter_var(adata, hashtags)
 
     if k_func == "kmeans":
@@ -1004,5 +1014,10 @@ def hashtag_demultiplex(
     for cluster in clusters:
         if (np.sum(averages.loc[cluster]) == 0):
             raise ValueError("cells with zero counts exist as a cluster")
+        
+    discrete = pd.DataFrame(index=clusters, columns=hashtags)
+    for cluster in clusters:
+        for hashtag in hashtags:
+            discrete.loc[cluster, hashtag] = 0
 
     # When fitting nbinom, p = mean/variance, n = mean^2/(variance - mean)
